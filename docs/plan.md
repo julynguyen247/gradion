@@ -20,7 +20,7 @@ Hard constraints to keep visible while building:
 - Next.js App Router with TypeScript, using the Node.js runtime for route handlers
 - React Server Components for initial page loads; small client components for forms, polling, and live progress
 - Tailwind CSS and Lucide icons; build a small local component set rather than adopting a large UI kit
-- SQLite with Prisma for durable state and atomic conditional updates
+- SQLite through `better-sqlite3` for durable state and explicit atomic conditional updates
 - Zod for request and Gemini response validation
 - Official `@google/genai` JavaScript SDK, with model IDs supplied through environment variables
 - Vitest, React Testing Library, and a fake Gemini adapter for tests
@@ -29,7 +29,7 @@ Use one repository and one Next.js process. Do not create a separate API service
 
 Provisional model defaults, based on the current notebook and Gemini documentation checked on 2026-08-18:
 
-- Text: `gemini-3.7-flash`
+- Text: `gemini-3.6-flash` (the supported stable Interactions model; the notebook currently names `gemini-3.7-flash`, which is not listed in the official model catalog)
 - Image: `gemini-3.1-flash-image` for better multi-image/character consistency; switch to another current Nano Banana model through `GEMINI_IMAGE_MODEL` if account availability or cost requires it
 
 Before implementation, confirm model access and image limits with the actual assessment API key. Keep model selection configurable because IDs and availability change.
@@ -143,7 +143,7 @@ Keep the text and image interaction IDs in the database so every later call resu
 
 - Create the Next.js TypeScript app, linting, formatting, Vitest, and React Testing Library.
 - Add `.env.example`, `.gitignore`, `start.sh`, and `test.sh` early.
-- Add the Prisma schema, migration, filesystem helpers, and a `GeminiGateway` interface with real and fake implementations.
+- Add the SQLite schema, filesystem helpers, and a `GeminiGateway` interface with real and fake implementations.
 - Commit: `chore: scaffold Next.js app and test harness`
 
 ### 2. Identity and projects — 2 hours
