@@ -28,6 +28,8 @@ The provisional plan named `gemini-3.7-flash` because the current notebook conta
 
 Codex's first route proposal accepted a catch-all media path. I replaced it with a project and asset identity: the server verifies the session owns the project, resolves the stored database path below the configured data root, and streams the result. Nothing generated is placed in `public/`, so knowing another asset URL cannot bypass ownership. The cost is one database lookup per image request and no direct static hosting, which is immaterial for at most three generated images per project.
 
-## If I had one more day
+## Sanitize provider errors before persistence and display
 
-I would add a visible attempt history for each step, including start time, finish time, outcome, and sanitized error. Retry behavior and API cost are the riskiest parts of this workflow; an attempt history would make both understandable without changing the required five-step pipeline.
+Gemini quota failures can include long SDK messages with internal metric names, model IDs, billing guidance, and documentation URLs. I chose not to persist or expose that provider text. The pipeline classifies provider failures at the backend boundary and stores only short, application-owned messages; a 429 or quota failure becomes “Generation limit reached. Please try again later.” Existing raw errors written by older versions are sanitized when the project is next loaded, and the frontend applies the same concise fallback while state refreshes.
+
+The failed step keeps a visible “Try again” action, but retry remains explicitly user-triggered so an exhausted quota cannot cause repeated billable calls. The tradeoff is less diagnostic detail in the UI and database. Provider details belong in controlled server diagnostics rather than user-facing project state.

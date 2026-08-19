@@ -1,7 +1,7 @@
 import Image from "next/image";
 import type { Character, Chapter } from "@/lib/client/types";
 import { AlertIcon, SparkleIcon } from "./icons";
-import { Spinner } from "./spinner";
+import { ArtGenerationAnimation } from "./art-generation-animation";
 
 type Props =
   | { kind: "character"; item: Character; index: number }
@@ -17,7 +17,7 @@ export function EntityCard(props: Props) {
         {isDone && mediaUrl ? (
           <Image src={mediaUrl} alt={`${kind === "character" ? "Portrait" : "Illustration"} for ${item.name}`} fill sizes={kind === "character" ? "(max-width: 640px) 100vw, 320px" : "(max-width: 900px) 100vw, 720px"} unoptimized />
         ) : item.state === "RUNNING" ? (
-          <div className="media-state media-generating" role="status"><Spinner label={`Generating ${kind} for ${item.name}`} /><strong>{kind === "character" ? `Painting ${item.name}` : "Painting the scene"}</strong><span>This image will appear here when it lands.</span></div>
+          <div className="media-state media-generating" role="status" aria-label={`Generating ${kind} for ${item.name}`}><ArtGenerationAnimation /><strong>{kind === "character" ? `Painting ${item.name}` : "Painting the scene"}</strong><span>This image will appear here when it lands.</span></div>
         ) : item.state === "FAILED" ? (
           <div className="media-state media-failed"><AlertIcon /><strong>Image paused</strong><span>Retry the step to continue.</span></div>
         ) : (

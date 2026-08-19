@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AppError } from "./errors";
 import type { ProjectFiles } from "./files";
 import type { GeminiGateway, PromptItem } from "./gemini/gateway";
+import { PIPELINE_INTERRUPTED_MESSAGE, toSafePipelineFailure } from "./pipeline-errors";
 import type { ProjectStore, ProjectRow } from "./projects";
 import { stepNumber, type ProjectDetailDTO, type Step } from "./types";
 
@@ -71,7 +72,7 @@ export class PipelineService {
          SET step_state = 'FAILED', last_error = ?, updated_at = ?
          WHERE id = ? AND user_id = ? AND step_state = 'RUNNING' AND step_started_at <= ?`,
       )
-      .run("The server stopped while this step was running. Retry when ready.", Date.now(), projectId, userId, cutoff);
+      .run(PIPELINE_INTERRUPTED_MESSAGE, Date.now(), projectId, userId, cutoff);
     if (result.changes !== 1) {
       throw new AppError("STEP_NOT_STALE", "This step is still active and cannot be recovered yet.", 409);
     }
@@ -300,13 +301,13 @@ export class PipelineService {
   }
 
   private fail(projectId: string, step: Step, error: unknown): void {
-    const message = error instanceof Error ? error.message : "Unknown pipeline error";
+    const failure = toSafePipelineFailure(error);
     this.projects.database
       .prepare(
         `UPDATE projects SET step_state = 'FAILED', last_error = ?, updated_at = ?
          WHERE id = ? AND active_step = ? AND step_state = 'RUNNING'`,
       )
-      .run(message.slice(0, 500), Date.now(), projectId, step);
+      .run(failure.message, Date.now(), projectId, step);
   }
 
   private heartbeat(projectId: string): void {

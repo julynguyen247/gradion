@@ -5,6 +5,7 @@ export interface FakeGatewayOptions {
   chapters?: PromptItem[];
   failMethod?: keyof FakeGeminiGateway["calls"];
   failAtCall?: number;
+  failError?: unknown;
   waitForStyle?: Promise<void>;
 }
 
@@ -92,7 +93,7 @@ export class FakeGeminiGateway implements GeminiGateway {
   private tick(method: keyof FakeGeminiGateway["calls"]): void {
     this.calls[method] += 1;
     if (this.options.failMethod === method && this.calls[method] === (this.options.failAtCall ?? 1)) {
-      throw new Error(`Fake ${method} failure`);
+      throw this.options.failError ?? new Error(`Fake ${method} failure`);
     }
   }
 

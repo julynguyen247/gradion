@@ -7,6 +7,7 @@ import { createDatabase, type SqliteDatabase } from "./database";
 import { ProjectFiles } from "./files";
 import { FakeGeminiGateway, type FakeGatewayOptions } from "./gemini/fake";
 import { PipelineService } from "./pipeline";
+import { PIPELINE_FAILURE_MESSAGES } from "./pipeline-errors";
 import { ProjectStore } from "./projects";
 import type { Step } from "./types";
 
@@ -106,7 +107,7 @@ describe("failure, retry, and stale recovery", () => {
       activeStep: "CHARACTERS",
       stepState: "FAILED",
     });
-    expect(failed.project.lastError).toContain("Fake generateCharacters failure");
+    expect(failed.project.lastError).toBe(PIPELINE_FAILURE_MESSAGES.generationFailed);
 
     const retried = await harness.pipeline.runStep(harness.userId, harness.projectId, "CHARACTERS");
     expect(retried.project).toMatchObject({ completedStep: 2, activeStep: null, stepState: "IDLE" });
@@ -129,6 +130,49 @@ describe("failure, retry, and stale recovery", () => {
     const retried = await harness.pipeline.runStep(harness.userId, harness.projectId, "STYLE");
     expect(retried.project.completedStep).toBe(1);
     expect(harness.gateway.calls.generateStyle).toBe(1);
+  });
+
+  it("persists and returns only a safe message for a provider quota failure", async () => {
+    const providerMessage =
+      "429 You exceeded your current quota. See https://ai.google.dev/gemini-api/docs/rate-limits";
+    const providerError = Object.assign(new Error(providerMessage), { status: 429 });
+    const harness = await createHarness({
+      failMethod: "generateStyle",
+      failAtCall: 1,
+      failError: providerError,
+    });
+
+    const failed = await harness.pipeline.runStep(harness.userId, harness.projectId, "STYLE");
+    const stored = harness.database
+      .prepare("SELECT last_error FROM projects WHERE id = ?")
+      .get(harness.projectId) as { last_error: string };
+
+    expect(failed.project.lastError).toBe(PIPELINE_FAILURE_MESSAGES.generationLimit);
+    expect(stored.last_error).toBe(PIPELINE_FAILURE_MESSAGES.generationLimit);
+    expect(JSON.stringify(failed.project)).not.toContain("ai.google.dev");
+    expect(stored.last_error).not.toContain("quota");
+
+    const retried = await harness.pipeline.runStep(harness.userId, harness.projectId, "STYLE");
+    expect(retried.project).toMatchObject({ completedStep: 1, stepState: "IDLE", lastError: null });
+    expect(harness.gateway.calls.generateStyle).toBe(2);
+  });
+
+  it("scrubs a legacy raw quota failure before returning project detail", async () => {
+    const harness = await createHarness();
+    const legacyMessage =
+      "429 quota exceeded. More details: https://ai.google.dev/gemini-api/docs/rate-limits";
+    harness.database
+      .prepare("UPDATE projects SET active_step = 'STYLE', step_state = 'FAILED', last_error = ? WHERE id = ?")
+      .run(legacyMessage, harness.projectId);
+
+    const project = await harness.projects.getDetail(harness.userId, harness.projectId);
+    const stored = harness.database
+      .prepare("SELECT last_error FROM projects WHERE id = ?")
+      .get(harness.projectId) as { last_error: string };
+
+    expect(project.lastError).toBe(PIPELINE_FAILURE_MESSAGES.generationLimit);
+    expect(stored.last_error).toBe(PIPELINE_FAILURE_MESSAGES.generationLimit);
+    expect(JSON.stringify(project)).not.toContain("ai.google.dev");
   });
 
   it("refuses recovery while a claim is still fresh", async () => {

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { SqliteDatabase } from "./database";
 import { notFound } from "./errors";
 import type { ProjectFiles } from "./files";
+import { sanitizePersistedPipelineError } from "./pipeline-errors";
 import type {
   ChapterDTO,
   CharacterDTO,
@@ -107,6 +108,7 @@ export class ProjectStore {
 
   async getDetail(userId: string, projectId: string): Promise<ProjectDetailDTO> {
     const row = this.getOwnedRow(userId, projectId);
+    const lastError = this.scrubLastError(row);
     const characters = this.database
       .prepare(
         "SELECT id, name, prompt, state, portrait_path, position FROM characters WHERE project_id = ? ORDER BY position",
@@ -123,7 +125,7 @@ export class ProjectStore {
       bookText: await this.files.readBook(row.book_path),
       style: row.style,
       stepStartedAt: row.step_started_at ? new Date(row.step_started_at).toISOString() : null,
-      lastError: row.last_error,
+      lastError,
       canRecover:
         row.step_state === "RUNNING" &&
         row.step_started_at !== null &&
@@ -147,6 +149,17 @@ export class ProjectStore {
           : null,
       })),
     };
+  }
+
+  private scrubLastError(row: ProjectRow): string | null {
+    if (!row.last_error) return null;
+    const safeMessage = sanitizePersistedPipelineError(row.last_error);
+    if (safeMessage !== row.last_error) {
+      this.database
+        .prepare("UPDATE projects SET last_error = ? WHERE id = ? AND last_error = ?")
+        .run(safeMessage, row.id, row.last_error);
+    }
+    return safeMessage;
   }
 
   getAsset(

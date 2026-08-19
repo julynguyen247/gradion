@@ -10,7 +10,7 @@ I deliberately did not mock every form field or test Next.js itself. Browser ver
 
 ## Real test report
 
-Run on 2026-08-18 with Node.js 26.4.0 and npm 12.0.2:
+Run on 2026-08-19 with Node.js 26.4.0 and npm 12.0.2:
 
 ```text
 > gradion@0.1.0 test
@@ -18,9 +18,9 @@ Run on 2026-08-18 with Node.js 26.4.0 and npm 12.0.2:
 
  RUN  v4.1.10 /home/khoi/Downloads/gradion-assessment
 
- Test Files  3 passed (3)
-      Tests  16 passed (16)
-   Duration  750ms
+ Test Files  4 passed (4)
+      Tests  26 passed (26)
+   Duration  937ms
 ```
 
 The same verification pass also completed `npm run lint`, `npx tsc --noEmit`, and `npm run build` successfully. The production build generated all four page routes and all six dynamic API routes.
