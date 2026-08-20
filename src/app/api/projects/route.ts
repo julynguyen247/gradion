@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
       if (!uploaded.name.toLowerCase().endsWith(".txt")) {
         throw new AppError("INVALID_FILE_TYPE", "Book upload must be a .txt file.", 400);
       }
+      if (uploaded.type && uploaded.type.toLowerCase() !== "text/plain") {
+        throw new AppError("INVALID_FILE_TYPE", "Book upload must be plain text.", 400);
+      }
       if (uploaded.size > MAX_BOOK_BYTES) {
         throw new AppError("BOOK_TOO_LARGE", "Book text must be 2 MB or smaller.", 413);
       }

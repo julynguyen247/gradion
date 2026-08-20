@@ -118,8 +118,21 @@ export class PipelineService {
   }
 
   private async runStyle(row: ProjectRow, requestedStyle?: string): Promise<void> {
+    const preservedStyle = requestedStyle ?? row.style ?? undefined;
+    if (requestedStyle) {
+      this.projects.database
+        .prepare("UPDATE projects SET style = ?, updated_at = ? WHERE id = ?")
+        .run(requestedStyle, Date.now(), row.id);
+    }
+
+    // The provider result is checkpointed before the project-level transition.
+    // A process can stop in that narrow gap, so an explicit retry should finish
+    // the transition without spending quota on the same style again.
+    if (row.style && row.text_interaction_id) return;
+
     let fileUri = row.gemini_file_uri;
     if (!fileUri) {
+      this.heartbeat(row.id);
       const uploaded = await this.gateway.uploadBook(row.book_path);
       fileUri = uploaded.uri;
       this.projects.database
@@ -129,6 +142,7 @@ export class PipelineService {
 
     let bookInteractionId = row.book_interaction_id;
     if (!bookInteractionId) {
+      this.heartbeat(row.id);
       bookInteractionId = await this.gateway.startBook(fileUri);
       this.projects.database
         .prepare("UPDATE projects SET book_interaction_id = ?, updated_at = ? WHERE id = ?")
@@ -136,7 +150,7 @@ export class PipelineService {
     }
 
     this.heartbeat(row.id);
-    const result = await this.gateway.generateStyle(bookInteractionId, requestedStyle);
+    const result = await this.gateway.generateStyle(bookInteractionId, preservedStyle);
     this.projects.database
       .prepare("UPDATE projects SET style = ?, text_interaction_id = ?, updated_at = ? WHERE id = ?")
       .run(result.text, result.interactionId, Date.now(), row.id);
@@ -145,6 +159,7 @@ export class PipelineService {
   private async runCharacters(row: ProjectRow): Promise<void> {
     const current = this.refresh(row.id);
     if (!current.text_interaction_id) throw new Error("Style interaction is missing.");
+    if (this.countItems("characters", row.id) > 0) return;
     this.heartbeat(row.id);
     const result = await this.gateway.generateCharacters(current.text_interaction_id);
     const characters = this.capItems(result.items, 2, "characters");
@@ -219,6 +234,7 @@ export class PipelineService {
   private async runChapters(row: ProjectRow): Promise<void> {
     const current = this.refresh(row.id);
     if (!current.text_interaction_id) throw new Error("Character interaction is missing.");
+    if (this.countItems("chapters", row.id) > 0) return;
     this.heartbeat(row.id);
     const result = await this.gateway.generateChapters(current.text_interaction_id);
     const chapters = this.capItems(result.items, 1, "chapters");
@@ -319,6 +335,13 @@ export class PipelineService {
 
   private refresh(projectId: string): ProjectRow {
     return this.projects.database.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as ProjectRow;
+  }
+
+  private countItems(table: "characters" | "chapters", projectId: string): number {
+    const row = this.projects.database
+      .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE project_id = ?`)
+      .get(projectId) as { count: number };
+    return row.count;
   }
 
   private capItems(items: PromptItem[], cap: number, label: string): PromptItem[] {

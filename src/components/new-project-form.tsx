@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { DragEvent, FormEvent, useRef, useState } from "react";
+import { DragEvent, FormEvent, KeyboardEvent, useRef, useState } from "react";
 import { api } from "@/lib/client/api";
 import { ArrowLeftIcon, ArrowRightIcon, BookIcon, UploadIcon } from "./icons";
 import { Spinner } from "./spinner";
@@ -12,6 +12,8 @@ type Source = "paste" | "upload";
 export function NewProjectForm() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const pasteTabRef = useRef<HTMLButtonElement>(null);
+  const uploadTabRef = useRef<HTMLButtonElement>(null);
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -35,6 +37,22 @@ export function NewProjectForm() {
     event.preventDefault();
     setDragging(false);
     chooseFile(event.dataTransfer.files[0]);
+  }
+
+  function handleSourceKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    let nextSource: Source | null = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      nextSource = source === "paste" ? "upload" : "paste";
+    } else if (event.key === "Home") {
+      nextSource = "paste";
+    } else if (event.key === "End") {
+      nextSource = "upload";
+    }
+
+    if (!nextSource) return;
+    event.preventDefault();
+    setSource(nextSource);
+    (nextSource === "paste" ? pasteTabRef : uploadTabRef).current?.focus();
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -79,19 +97,19 @@ export function NewProjectForm() {
         <fieldset className="source-fieldset">
           <legend>Book text</legend>
           <div className="source-tabs" role="tablist" aria-label="Book text source">
-            <button type="button" role="tab" aria-selected={source === "paste"} className={source === "paste" ? "is-active" : ""} onClick={() => setSource("paste")}><BookIcon /> Paste text</button>
-            <button type="button" role="tab" aria-selected={source === "upload"} className={source === "upload" ? "is-active" : ""} onClick={() => setSource("upload")}><UploadIcon /> Upload .txt</button>
+            <button ref={pasteTabRef} id="paste-source-tab" type="button" role="tab" aria-controls="paste-source-panel" aria-selected={source === "paste"} tabIndex={source === "paste" ? 0 : -1} className={source === "paste" ? "is-active" : ""} onClick={() => setSource("paste")} onKeyDown={handleSourceKeyDown}><BookIcon /> Paste text</button>
+            <button ref={uploadTabRef} id="upload-source-tab" type="button" role="tab" aria-controls="upload-source-panel" aria-selected={source === "upload"} tabIndex={source === "upload" ? 0 : -1} className={source === "upload" ? "is-active" : ""} onClick={() => setSource("upload")} onKeyDown={handleSourceKeyDown}><UploadIcon /> Upload .txt</button>
           </div>
           {source === "paste" ? (
-            <div role="tabpanel" className="source-panel">
+            <div id="paste-source-panel" role="tabpanel" aria-labelledby="paste-source-tab" className="source-panel">
               <label className="sr-only" htmlFor="book-text">Paste book text</label>
               <textarea id="book-text" value={text} onChange={(event) => setText(event.target.value)} rows={12} placeholder="Once upon a time…" aria-invalid={Boolean(errors.book)} aria-describedby={errors.book ? "book-error" : "book-note"} />
               {!errors.book && <p className="field-note" id="book-note">Plain text works best. The full text remains readable from the project page.</p>}
             </div>
           ) : (
-            <div role="tabpanel" className="source-panel">
+            <div id="upload-source-panel" role="tabpanel" aria-labelledby="upload-source-tab" className="source-panel">
               <div className={`dropzone ${dragging ? "is-dragging" : ""} ${file ? "has-file" : ""}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={drop}>
-                <input ref={inputRef} id="book-file" type="file" accept=".txt,text/plain" onChange={(event) => chooseFile(event.target.files?.[0])} />
+                <input ref={inputRef} id="book-file" type="file" accept=".txt,text/plain" aria-label="Book text .txt file" tabIndex={-1} onChange={(event) => chooseFile(event.target.files?.[0])} />
                 <span className="dropzone-icon"><UploadIcon /></span>
                 {file ? <><strong>{file.name}</strong><span>{Math.max(1, Math.round(file.size / 1024)).toLocaleString()} KB ready to use</span></> : <><strong>Drop your .txt file here</strong><span>or choose it from your computer</span></>}
                 <button className="button button-secondary button-small" type="button" onClick={() => inputRef.current?.click()}>{file ? "Choose another file" : "Choose file"}</button>

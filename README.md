@@ -4,7 +4,7 @@ A local full-stack application that turns a book into an art direction, two adul
 
 ## Prerequisites
 
-- Node.js 20.9 or newer
+- Node.js 22 or newer (verified with Node.js 26)
 - npm
 - A Gemini API key with access to the configured text and Nano Banana image models
 

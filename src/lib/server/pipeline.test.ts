@@ -94,9 +94,74 @@ describe("pipeline ordering and execution claims", () => {
     expect(completed.project.completedStep).toBe(1);
     expect(harness.gateway.calls.generateStyle).toBe(1);
   });
+
+  it("shares the atomic claim across independent SQLite connections", async () => {
+    let releaseStyle!: () => void;
+    const waitForStyle = new Promise<void>((resolve) => {
+      releaseStyle = resolve;
+    });
+    const harness = await createHarness({ waitForStyle });
+    const secondDatabase = createDatabase(path.join(harness.directory, "test.db"));
+    const secondFiles = new ProjectFiles(path.join(harness.directory, "files"));
+    const secondProjects = new ProjectStore(secondDatabase, secondFiles, 60_000);
+    const secondGateway = new FakeGeminiGateway();
+    const secondPipeline = new PipelineService(
+      secondProjects,
+      secondFiles,
+      secondGateway,
+      60_000,
+    );
+
+    try {
+      const first = harness.pipeline.runStep(harness.userId, harness.projectId, "STYLE");
+      const duplicate = await secondPipeline.runStep(
+        harness.userId,
+        harness.projectId,
+        "STYLE",
+      );
+
+      expect(duplicate.alreadyRunning).toBe(true);
+      expect(duplicate.project.stepState).toBe("RUNNING");
+      expect(secondGateway.calls.uploadBook).toBe(0);
+      expect(secondGateway.calls.startBook).toBe(0);
+      expect(secondGateway.calls.generateStyle).toBe(0);
+
+      releaseStyle();
+      await first;
+    } finally {
+      releaseStyle();
+      secondDatabase.close();
+    }
+  });
 });
 
 describe("failure, retry, and stale recovery", () => {
+  it("preserves a user-supplied style when its provider call must be retried", async () => {
+    const harness = await createHarness({ failMethod: "generateStyle", failAtCall: 1 });
+
+    const failed = await harness.pipeline.runStep(
+      harness.userId,
+      harness.projectId,
+      "STYLE",
+      { style: "Luminous cut-paper collage" },
+    );
+    expect(failed.project).toMatchObject({
+      completedStep: 0,
+      stepState: "FAILED",
+      style: "Luminous cut-paper collage",
+    });
+
+    const retried = await harness.pipeline.runStep(harness.userId, harness.projectId, "STYLE");
+    expect(retried.project).toMatchObject({
+      completedStep: 1,
+      stepState: "IDLE",
+      style: "Luminous cut-paper collage",
+    });
+    expect(harness.gateway.calls.uploadBook).toBe(1);
+    expect(harness.gateway.calls.startBook).toBe(1);
+    expect(harness.gateway.calls.generateStyle).toBe(2);
+  });
+
   it("preserves completed steps and retries only the failed step", async () => {
     const harness = await createHarness({ failMethod: "generateCharacters", failAtCall: 1 });
     await runSteps(harness, ["STYLE"]);
@@ -190,6 +255,32 @@ describe("failure, retry, and stale recovery", () => {
 });
 
 describe("bounded, checkpointed generation", () => {
+  it("finalizes persisted text checkpoints without repeating Gemini calls", async () => {
+    const harness = await createHarness();
+    await runSteps(harness, ["STYLE", "CHARACTERS"]);
+    const before = await harness.projects.getDetail(harness.userId, harness.projectId);
+
+    harness.database
+      .prepare(
+        `UPDATE projects
+         SET completed_step = 1, active_step = 'CHARACTERS', step_state = 'FAILED',
+             step_started_at = NULL, last_error = ?
+         WHERE id = ?`,
+      )
+      .run(PIPELINE_FAILURE_MESSAGES.generationFailed, harness.projectId);
+
+    const resumed = await harness.pipeline.runStep(
+      harness.userId,
+      harness.projectId,
+      "CHARACTERS",
+    );
+    expect(resumed.project).toMatchObject({ completedStep: 2, stepState: "IDLE" });
+    expect(resumed.project.characters.map(({ id }) => id)).toEqual(
+      before.characters.map(({ id }) => id),
+    );
+    expect(harness.gateway.calls.generateCharacters).toBe(1);
+  });
+
   it("hard-caps model output to two adult characters and one chapter", async () => {
     const harness = await createHarness({
       characters: [
